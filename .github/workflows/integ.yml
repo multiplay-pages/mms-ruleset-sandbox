@@ -1,0 +1,57 @@
+name: integ
+on:
+  push:
+    branches: [integration]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build fake artifact
+        run: |
+          mkdir -p map05
+          echo built > map05/planner-offline.html
+      - name: Upload rebuilt offline artifact (integration branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/integration'
+        uses: actions/upload-artifact@v4
+        with:
+          name: planner-offline
+          path: map05/planner-offline.html
+          retention-days: 1
+          if-no-files-found: error
+  publish-artifact:
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-artifact-integration
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: planner-offline
+          path: map05
+      - name: Commit rebuilt offline artifact only on integration branch
+        run: |
+          git add map05/planner-offline.html
+          if git diff --cached --quiet; then
+            echo 'Integrated offline artifact already up-to-date'
+          else
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git commit -m 'build: regenerate integrated offline planner'
+            git push origin HEAD:integration
+          fi
